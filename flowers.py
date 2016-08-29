@@ -37,25 +37,36 @@ class Flower:
                                     npoints=self.num_petals)
         petal_radius = self.petal_length / 2.
         for pc in petal_centers:
-            paths.append(circle_points(pc[0],pc[1], petal_radius, point_separation=2.))
+            paths.append(circle_points(pc[0],pc[1], petal_radius, point_separation=6.))
 
-# TODO if the move_point is within the petal move it towards it's own petal's
-# center i.e. solve circle-line intersection for the vector between move's
-# petal point and center, and the petal it's overlapping.
-#        for i, pc in enumerate(petal_centers):
-#            for j, move_overlaps in enumerate(paths[i+2:]): #ignore current path and pistil path 
-#                move_center = petal_centers[i+j]
-#                for p in move_overlaps:
-#                    dx = p[0] - pc[0]
-#                    dy = p[1] - pc[1]
-#                    if (dx**2 + dy**2) <= petal_radius**2: # length=2*radius
-#                        #Adjust position relative to move_center not pc
-#                        new_radius = petal_radius - sqrt(dx**2 + dy**2)
-#                        dx = p[0] - pc[0]
-#                        dy = p[1] - pc[1]
-#                        dmag = sqrt(dx**2 + dy**2)
-#                        p[0] = pc[0] + petal_radius * dx / dmag
-#                        p[1] = pc[1] + petal_radius * dy / dmag
+        # petal point and center, and the petal it's overlapping.
+        for i, pc in enumerate(petal_centers):
+            for j, move_overlaps in enumerate(paths[i+2:]): #ignore current path and pistil path 
+                overlap_points = []
+                for i, p in enumerate(move_overlaps):
+                    dx = p[0] - pc[0]
+                    dy = p[1] - pc[1]
+                    if (dx**2 + dy**2) <= petal_radius**2: # length=2*radius
+                        overlap_points.append((p, (dx,dy), i))
+                # We can have two overlapping segments if point 0 is an overlap
+                contiguous1 = []
+                contiguous2 = []
+                for oi, (p,d,i) in enumerate(overlap_points):
+                    if i == oi: contiguous1.append((p,d))
+                    else: contiguous2.append((p,d))
+                overlap_points = contiguous2 + contiguous1
+
+                if len(overlap_points) >= 2:
+                    # Adjust the first and last overlap points
+                    for p, (dx,dy) in [overlap_points[0], overlap_points[-1]]:
+                        dx = p[0] - pc[0]
+                        dy = p[1] - pc[1]
+                        dmag = sqrt(dx**2 + dy**2)
+                        p[0] = pc[0] + petal_radius * dx / dmag
+                        p[1] = pc[1] + petal_radius * dy / dmag
+                    # Delete the rest
+                    for p, _ in overlap_points[1:-1]:
+                        move_overlaps.remove(p)
 
         dwg = svgwrite.Drawing('test%05i.svg'%0, profile='tiny')
         line_width = 1
@@ -69,11 +80,12 @@ class Flower:
                 miny = y if y < miny else miny
                 maxy = y if y > maxy else maxy
 
-            svgpath = svgwrite.path.Path(path(p), fill='none')
-            svgpath.push('Z')
-            dwg.add(svgpath)
-            #svgpath.stroke('black', width=line_width)
-            svgpath.stroke(col, width=line_width)
+            if len(p) > 0:
+              svgpath = svgwrite.path.Path(path(p), fill='none')
+              svgpath.push('Z')
+              dwg.add(svgpath)
+              #svgpath.stroke('black', width=line_width)
+              svgpath.stroke(col, width=line_width)
         dwg.viewbox(minx=minx-line_width, miny=miny-line_width, 
                     width=maxx-minx+2*line_width, height=maxy-miny+2*line_width)
         dwg.save()
