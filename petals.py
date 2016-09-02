@@ -3,20 +3,11 @@ import svgwrite
 import time
 import numpy as np
 
-def draw(paths, viewbox):
-    dwg = svgwrite.Drawing('test%05i.svg'%0, profile='tiny')
-    line_width = 1.
-
-    cols = ['red','green','blue'] * len(paths)
-    cols = ['black'] * len(paths)
-    fills = ['red', 'green', 'blue'] * len(paths)
-    fills = ['none'] * len(paths)
-    for p, col, fill in zip(paths, cols, fills):
-        p.fill(fill)
-        dwg.add(p)
-        p.stroke(col, width=line_width)
-    dwg.viewbox(*viewbox)
-    dwg.save()
+def draw(flower, drawing, color='black', line_width=1.):
+    for petal in flower:
+        petal.fill('none')
+        drawing.add(petal)
+        petal.stroke(color, width=line_width)
 
 petal_params = {
         'length': 0, # distance from base to tip
