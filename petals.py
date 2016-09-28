@@ -142,21 +142,16 @@ def flower(x,y, npetals, petal):
 
 def flower_sheet(npetals, x,y, radius, spacing=10):
     min_dist = 7
-    start = Petal(length = (radius - spacing) / 2., width = 20).randomize()
+    start = Petal(length = radius / 2., width = 20).randomize()
     end = start
     while (end - start).mag() < min_dist:
-        print((end - start).mag())
-        end =   Petal(length = (radius - spacing) / 2., width = 20).randomize()
+        end = Petal(length = (radius - spacing) / 2., width = 20).randomize()
     xv,yv = ((end - start) / max(x,y)).random_split()
-
-    #xv = (base_petal - Petal().randomize()) / (2*npetals)
-    #yv = (base_petal - Petal().randomize()) / (2*npetals)
-    print(xv, yv)
 
     ps = []
     for x,y in product(range(10), range(10)):
-        ps += flower(70*(x+1),
-                     70*(y+1),
+        ps += flower((radius+spacing)*(x+1),
+                     (radius+spacing)*(y+1),
                      npetals,
                      #Petal(length = (radius - spacing) / 2., width = 20).randomize())
                      start + xv*x + yv*y)
@@ -169,20 +164,16 @@ def draw(flower, drawing, color='black', line_width=1.):
         petal.stroke(color, width=line_width)
 
 def main():
-    npetals = 3
-    flowers = np.zeros((100,8))
+    npetals = 7
+    x,y = 10, 10
+    radius = 60
+    spacing = 10
 
-#    for x in range(10):
-#        for y in range(10):
-#            flowers[x+10*y] = pack(70*(x+1), 70*(y+1), npetals, 30, 20, x/5., y/5)
-#
-#    ps = []
-#    for f in flowers:
-#        ps += unpack_to_svg(f)
-
-    flowers = flower_sheet(7, 10,10, 60)
+    flowers = flower_sheet(npetals, x,y, radius, spacing)
     dwg = svg.Drawing('test.svg')
     draw(flowers, dwg, color='black', line_width=1.)
+    dwg.viewbox(minx=0, miny=0, 
+                width=(radius+spacing)*(x+1), height=(radius+spacing)*(y+1))
     dwg.save()
 
 if __name__ == '__main__':
