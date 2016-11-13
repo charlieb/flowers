@@ -6,6 +6,34 @@ from itertools import product
 from copy import copy
 from random import random
 from math import acos, sqrt
+import shapely.geometry as geom
+import shapely.affinity as aff
+import bezier as bez
+
+def geom_petal(x,y, angle, length, width, taper=1., fatness=1.):
+    flat = 0.1
+    side1 = [(-width/2., 0), (fatness*(-width/2.), length/2.), (taper*(-width/2.), length/2.), (0, length)]
+    side2 = [ (width/2., 0), (fatness*( width/2.), length/2.), (taper*( width/2.), length/2.), (0, length)]
+    side2.reverse() # so the two curves meet at the tip
+    return aff.rotate(geom.LinearRing(side1[0:1] + [bz[3] for bz in bez.subdiv(side1, 0.1)] +
+                                      side2[0:1] + [bz[3] for bz in bez.subdiv(side2, 0.1)]),
+                      angle)
+    
+
+
+def geom_flower(x,y, npetals, petal_length, petal_width, petal_taper=1., petal_fatness=1., petal_angle=None):
+    if petal_angle is None: # if not specified make an even distribution
+        petal_angle = 360 / npetals 
+    petals = [petal(x,y, petal_angle*i, petal_length, petal_width, petal_taper, petal_fatness)
+                for i in range(int(npetals))]
+    polys = [Polygon(p) for p in petals]
+    occluded_petals = []
+    for i, p in enumerate(petals):
+        for poly in polys[i+1:]:
+            p = p.difference(poly)
+        occluded_petals.append(p)
+    return occluded_petals
+
 
 
 class Petal(dict):
