@@ -10,30 +10,6 @@ import shapely.geometry as geom
 import shapely.affinity as aff
 import bezier as bez
 
-def geom_petal(x,y, angle, length, width, taper=1., fatness=1.):
-    flat = 0.1
-    side1 = [(-width/2., 0), (fatness*(-width/2.), length/2.), (taper*(-width/2.), length/2.), (0, length)]
-    side2 = [ (width/2., 0), (fatness*( width/2.), length/2.), (taper*( width/2.), length/2.), (0, length)]
-    side2.reverse() # so the two curves meet at the tip
-    return aff.rotate(geom.LinearRing(side1[0:1] + [bz[3] for bz in bez.subdiv(side1, 0.1)] +
-                                      side2[0:1] + [bz[3] for bz in bez.subdiv(side2, 0.1)]),
-                      angle)
-    
-
-
-def geom_flower(x,y, npetals, petal_length, petal_width, petal_taper=1., petal_fatness=1., petal_angle=None):
-    if petal_angle is None: # if not specified make an even distribution
-        petal_angle = 360 / npetals 
-    petals = [petal(x,y, petal_angle*i, petal_length, petal_width, petal_taper, petal_fatness)
-                for i in range(int(npetals))]
-    polys = [Polygon(p) for p in petals]
-    occluded_petals = []
-    for i, p in enumerate(petals):
-        for poly in polys[i+1:]:
-            p = p.difference(poly)
-        occluded_petals.append(p)
-    return occluded_petals
-
 
 
 class Petal(dict):
@@ -155,6 +131,103 @@ class Petal(dict):
                       ]
         return side1
 
+    def to_LineString(self):
+        flat = 0.1
+        side1 = [(-self['width']/2., 0), # Curve start point
+                 # curve control point - curve starts-off pointing towards this
+                 (self['fatness']*(-self['width']/2.), self['length']/2.), 
+                 # curve control point - curve ends pointing away from this
+                 (self['taper_symmetry'] * self['taper']*(-self['width']/2.), self['length']/2.), 
+                 # end point
+                 (0, self['length']),
+                 ]
+        side2 = [(0, self['length']),
+                 (self['taper']*( self['width']/2.), self['length']/2.),
+                 (self['fatness']* self['fatness_symmetry'] * self['width']/2., self['length']/2.),
+                 (self['width']/2., 0),
+                 ]
+        return geom.LineString(side1[0:1] + [bz[3] for bz in bez.subdiv([side1], 0.1)] +
+                               #side2[0:1] +
+                               [bz[3] for bz in bez.subdiv([side2], 0.1)])
+
+    def to_split_LineStrings(self):
+        flat = 0.1
+        side1 = [(-self['width']/2., 0), # Curve start point
+                 # curve control point - curve starts-off pointing towards this
+                 (self['fatness']*(-self['width']/2.), self['length']/2.), 
+                 # curve control point - curve ends pointing away from this
+                 (self['taper_symmetry'] * self['taper']*(-self['width']/2.), self['length']/2.), 
+                 # end point
+                 (0, self['length']),
+                 ]
+        side2 = [(0, self['length']),
+                 (self['taper']*( self['width']/2.), self['length']/2.),
+                 (self['fatness']* self['fatness_symmetry'] * self['width']/2., self['length']/2.),
+                 (self['width']/2., 0),
+                 ]
+        return (geom.LineString(side1[0:1] + [bz[3] for bz in bez.subdiv([side1], 0.1)]),
+                geom.LineString(side2[0:1] + [bz[3] for bz in bez.subdiv([side2], 0.1)]))
+    
+def geom_flower_interlocking(x,y, npetals, petal, petal_angle=None):
+    if petal_angle is None: # if not specified make an even distribution
+        petal_angle = 360 / npetals 
+    petals = [aff.rotate(petal.to_LineString(), petal_angle*i, origin=(0,0)) for i in range(int(npetals))]
+    polys = [geom.Polygon(p) for p in petals]
+
+    (lefts, rights) = zip(*[petal.to_split_LineStrings() for i in range(int(npetals))])
+    lefts = [aff.rotate(left, petal_angle*i, origin=(0,0)) for i, left in enumerate(lefts)]
+    rights = [aff.rotate(right, petal_angle*i, origin=(0,0)) for i, right in enumerate(rights)]
+
+    occluded_petals = []
+    for i, p in enumerate(lefts[:-1]):
+        for poly in polys[i+1:]:
+            #if not p.intersects(poly): break
+            #if i == 0 and poly == polys[-1]: continue
+            p = p.difference(poly)
+        #occluded_petals.append(lefts[i])
+        occluded_petals.append(rights[i])
+        occluded_petals.append(p)
+    occluded_petals.append(rights[-1])
+    occluded_petals.append(lefts[-1].difference(polys[0]))
+
+    polylines = []
+    for p in occluded_petals:
+        #print(list(p.coords))
+        polylines.append(svg.shapes.Polyline(p.coords))
+
+    return polylines
+
+def geom_flower(x,y, npetals, petal, petal_angle=None):
+    petal_scale = 0.99
+    if petal_angle is None: # if not specified make an even distribution
+        petal_angle = 360 / npetals 
+    petals = [aff.scale(aff.rotate(petal.to_LineString(), 
+                                   petal_angle*i, origin=(0,0)),
+                        petal_scale**i, petal_scale**i, origin=(0,0))
+             for i in range(int(npetals))]
+    polys = [geom.Polygon(p) for p in petals]
+
+    occluded_petals = []
+    for i, p in enumerate(petals[:-1]):
+        for poly in polys[i+1:]:
+            p = p.difference(poly)
+        occluded_petals.append(p)
+    occluded_petals.append(petals[-1])
+
+    # multilinestring.lines
+    polylines = []
+    for p in occluded_petals:
+        if type(p) is geom.collection.GeometryCollection:
+            print(type(p))
+            continue
+        if type(p) is geom.multilinestring.MultiLineString:
+            print(type(p))
+            continue
+        #print(list(p.coords))
+        polylines.append(svg.shapes.Polyline(p.coords))
+
+    return polylines
+
 def flower(x,y, npetals, petal):
     petal_angle = 360 / npetals 
     angle = 0
@@ -192,15 +265,17 @@ def draw(flower, drawing, color='black', line_width=1.):
         petal.stroke(color, width=line_width)
 
 def main():
-    npetals = 7
+    npetals = 500
     x,y = 10, 10
     radius = 60
     spacing = 10
 
-    flowers = flower_sheet(npetals, x,y, radius, spacing)
+    #flowers = flower_sheet(npetals, x,y, radius, spacing)
+    flowers = geom_flower(0,0, npetals, Petal(length = 10* radius / 2., width = 200), petal_angle=137.5)
     dwg = svg.Drawing('test.svg')
     draw(flowers, dwg, color='black', line_width=1.)
-    dwg.viewbox(minx=0, miny=0, 
+    #dwg.viewbox(minx=0, miny=0, 
+    dwg.viewbox(minx=-300, miny=-300, 
                 width=(radius+spacing)*(x+1), height=(radius+spacing)*(y+1))
     dwg.save()
 
@@ -210,4 +285,5 @@ if __name__ == '__main__':
     t1 = time.time()
 
     print("Elapsed:", t1-t0)
+
 
