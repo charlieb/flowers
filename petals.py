@@ -197,6 +197,40 @@ def geom_flower_interlocking(x,y, npetals, petal, petal_angle=None):
 
     return polylines
 
+def geom_flower2(x,y, npetals):
+    petal_scale = 0.99
+    petal_angle = 137.5
+    petal = Petal(width=100, length=200).randomize()
+    petals = [aff.scale(aff.rotate(petal.to_LineString(), 
+                                   petal_angle*i, origin=(0,0)),
+                        petal_scale**i, petal_scale**i, origin=(0,0))
+             for i in range(int(npetals))]
+    polys = [geom.Polygon(p) for p in petals]
+
+    occluded_petals = []
+    for i, p in enumerate(petals[:-1]):
+        for poly in polys[i+1:]:
+            try:
+                p = p.difference(poly)
+            except:
+                print('Error')
+        occluded_petals.append(p)
+    occluded_petals.append(petals[-1])
+
+    # multilinestring.lines
+    polylines = []
+    for p in occluded_petals:
+        if type(p) not in (geom.linestring.LineString, geom.multilinestring.MultiLineString):
+            print(type(p))
+            continue
+        if type(p) is geom.multilinestring.MultiLineString:
+            for p2 in p:
+                polylines.append(svg.shapes.Polyline(p2.coords))
+        else:
+            polylines.append(svg.shapes.Polyline(p.coords))
+
+    return polylines
+
 def geom_flower(x,y, npetals, petal, petal_angle=None):
     petal_scale = 0.99
     if petal_angle is None: # if not specified make an even distribution
@@ -217,13 +251,9 @@ def geom_flower(x,y, npetals, petal, petal_angle=None):
     # multilinestring.lines
     polylines = []
     for p in occluded_petals:
-        if type(p) is geom.collection.GeometryCollection:
+        if type(p) is not geom.linestring.LineString:
             print(type(p))
             continue
-        if type(p) is geom.multilinestring.MultiLineString:
-            print(type(p))
-            continue
-        #print(list(p.coords))
         polylines.append(svg.shapes.Polyline(p.coords))
 
     return polylines
@@ -265,13 +295,14 @@ def draw(flower, drawing, color='black', line_width=1.):
         petal.stroke(color, width=line_width)
 
 def main():
-    npetals = 500
+    npetals = 200
     x,y = 10, 10
     radius = 60
     spacing = 10
 
     #flowers = flower_sheet(npetals, x,y, radius, spacing)
-    flowers = geom_flower(0,0, npetals, Petal(length = 10* radius / 2., width = 200), petal_angle=137.5)
+    #flowers = geom_flower(0,0, npetals, Petal(length = 10* radius / 2., width = 200), petal_angle=137.5)
+    flowers = geom_flower2(0,0, npetals)
     dwg = svg.Drawing('test.svg')
     draw(flowers, dwg, color='black', line_width=1.)
     #dwg.viewbox(minx=0, miny=0, 
