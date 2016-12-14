@@ -16,25 +16,10 @@ class Petal(dict):
     DEFAULT_PARMS = {
         'length': 0, # distance from base to tip
         'width': 0,  # width at base
-        'taper' : 1, # how quickly the petal tapers to it's point
-                     # 1 gives a straight line
-                     # -1 gives a sharper, concave approach to the point
-                     # 2 gives a duller, convex approach to the point point
-        'taper_symmetry': 1, # if +1 both side of the petal are symmetrically convex, 
-                             # at -1 one side's convexity equals the other's concavity.
-        'fatness': 1, # controls the waist of the petal, 1 gives a straight waist
-        'fatness_symmetry': 1, # if +1 both side of the petal are symmetrically convex,
-                               # at -1 one side's convexity equals the other's concavity.
-        }
-    RANGES = {
-        'taper_min' : -1,
-        'taper_max' :  1,
-        'taper_symmetry_min': -1,
-        'taper_symmetry_max':  1,
-        'fatness_min': -1,
-        'fatness_max':  1,
-        'fatness_symmetry_min': -1,
-        'fatness_symmetry_max':  1,
+        'lft_bot' : 0, # controls the fatness at the bottom left
+        'lft_top' : 0, # controls the pointiness at the top left
+        'rgt_top' : 0, # controls the pointiness at the top right
+        'rgt_bot' : 0, # controls the fatness at the bottom right
         }
     LIMIT = 6.
 
@@ -42,31 +27,27 @@ class Petal(dict):
         super().__init__(self.DEFAULT_PARMS)
         self['length'] = length
         self['width'] = width
+    def __repr__(self):
+        res = ''
+        keys = list(self.keys())
+        keys.sort()
+        for k in keys:
+            res += '%s\t\t%s\n'%(k, self[k])
+        return res
 
     def _limit_(self):
-        taper = abs(self['taper']) + abs(self['taper_symmetry']) 
-        if taper > self.LIMIT:
-            self['taper'] /= taper
-            self['taper_symmetry'] /= taper
-
-        fatness = abs(self['fatness']) + abs(self['fatness_symmetry']) 
-        if fatness > self.LIMIT:
-            self['fatness'] /= fatness
-            self['fatness_symmetry'] /= fatness
+        '''Do not allow taper control points to cross. 
+        The right control point must always be on the right or the line will self intersect
+        '''
+        tmp = [self['lft_bot'], self['lft_top'], self['rgt_top'], self['rgt_bot']]
+        tmp.sort()
+        self['lft_bot'], self['lft_top'], self['rgt_top'], self['rgt_bot'] = tmp
 
     def randomize(self):
-        excl = 0.1
-        rnd = lambda mi, mx: mi + random() * (mx - mi)
-        total = 0.
-        for k in self:
-            if k not in ('width', 'length'):
-                #self[k] = rnd(self.RANGES[k+'_min'], self.RANGES[k+'_max'])
-                self[k] = 0
-                while -excl < self[k] < excl: # exclude area around 0 BORING!
-                    self[k] = rnd(-self.LIMIT, self.LIMIT)
-                total += self[k]
-
-        self._limit_()
+        self['lft_bot'] = - self['width'] + random() * self['width'] * 2
+        self['lft_top'] = self['lft_bot'] + random() * (self['width'] * 2 - self['lft_bot'])
+        self['rgt_top'] = self['lft_top'] + random() * (self['width'] * 2 - self['lft_top'])
+        self['rgt_bot'] = self['rgt_top'] + random() * (self['width'] * 2 - self['rgt_top'])
         return self
 
     def random_split(self):
@@ -77,6 +58,7 @@ class Petal(dict):
                 split = random()
                 p1[k] *= split
                 p2[k] *= 1-split
+        #print(p1, '\n', p2)
         return p1,p2
 
     def mag(self):
@@ -113,60 +95,43 @@ class Petal(dict):
                 pr[k] /= f
         return pr
     
+    def _points(self):
+        return [
+                (-self['width']/2., 0), # Curve start point
+                # curve control point - curve starts-off pointing towards this
+                (self['lft_bot'], self['length']/2.), 
+                # curve control point - curve ends pointing away from this
+                (self['lft_top'], self['length']/2.), 
+                # end point
+                (0, self['length']),
+                (self['rgt_top'], self['length']/2.),
+                (self['rgt_bot'], self['length']/2.),
+                (self['width']/2., 0),
+                ]
+
     def to_svg(self):
-        side1 = ['M', (-self['width']/2., 0), # Curve start point
-                        # curve control point - curve starts-off pointing towards this
-                 'C', (self['fatness']*(-self['width']/2.), self['length']/2.), 
-                        # curve control point - curve ends pointing away from this
-                      (self['taper_symmetry'] * self['taper']*(-self['width']/2.), self['length']/2.), 
-                        # end point
-                      (0, self['length']),
-        #              ]
-        #side2 = ['M', (self['width']/2., 0),
-                 'C',
-                      (self['taper']*( self['width']/2.), self['length']/2.),
-                      (self['fatness']* self['fatness_symmetry'] * self['width']/2., self['length']/2.),
-                      (self['width']/2., 0),
-                     # (0, self['length']),
-                      ]
-        return side1
+        points = self._points()
+        return ['M', points[0],
+                'C', points[1], points[2], points[3],
+                'C', points[4], points[5], points[6],
+               ]
 
     def to_LineString(self):
         flat = 0.1
-        side1 = [(-self['width']/2., 0), # Curve start point
-                 # curve control point - curve starts-off pointing towards this
-                 (self['fatness']*(-self['width']/2.), self['length']/2.), 
-                 # curve control point - curve ends pointing away from this
-                 (self['taper_symmetry'] * self['taper']*(-self['width']/2.), self['length']/2.), 
-                 # end point
-                 (0, self['length']),
-                 ]
-        side2 = [(0, self['length']),
-                 (self['taper']*( self['width']/2.), self['length']/2.),
-                 (self['fatness']* self['fatness_symmetry'] * self['width']/2., self['length']/2.),
-                 (self['width']/2., 0),
-                 ]
-        return geom.LineString(side1[0:1] + [bz[3] for bz in bez.subdiv([side1], 0.1)] +
+        points = self._points()
+        side1 = points[:4]
+        side2 = points[3:]
+        return geom.LineString(side1[0:1] + [bz[3] for bz in bez.subdiv([side1], flat)] +
                                #side2[0:1] +
                                [bz[3] for bz in bez.subdiv([side2], 0.1)])
 
     def to_split_LineStrings(self):
         flat = 0.1
-        side1 = [(-self['width']/2., 0), # Curve start point
-                 # curve control point - curve starts-off pointing towards this
-                 (self['fatness']*(-self['width']/2.), self['length']/2.), 
-                 # curve control point - curve ends pointing away from this
-                 (self['taper_symmetry'] * self['taper']*(-self['width']/2.), self['length']/2.), 
-                 # end point
-                 (0, self['length']),
-                 ]
-        side2 = [(0, self['length']),
-                 (self['taper']*( self['width']/2.), self['length']/2.),
-                 (self['fatness']* self['fatness_symmetry'] * self['width']/2., self['length']/2.),
-                 (self['width']/2., 0),
-                 ]
-        return (geom.LineString(side1[0:1] + [bz[3] for bz in bez.subdiv([side1], 0.1)]),
-                geom.LineString(side2[0:1] + [bz[3] for bz in bez.subdiv([side2], 0.1)]))
+        points = self._points()
+        side1 = points[:4]
+        side2 = points[3:]
+        return (geom.LineString(side1[0:1] + [bz[3] for bz in bez.subdiv([side1], flat)]),
+                geom.LineString(side2[0:1] + [bz[3] for bz in bez.subdiv([side2], flat)]))
     
 def geom_flower_interlocking(x,y, npetals, petal, petal_angle=None):
     if petal_angle is None: # if not specified make an even distribution
@@ -197,7 +162,7 @@ def geom_flower_interlocking(x,y, npetals, petal, petal_angle=None):
 
     return polylines
 
-def geom_flower2(x,y, npetals):
+def geom_flower_phi(x,y, npetals):
     petal_scale = 0.99
     petal_angle = 137.5
     petal = Petal(width=100, length=200).randomize()
@@ -229,6 +194,7 @@ def geom_flower2(x,y, npetals):
         else:
             polylines.append(svg.shapes.Polyline(p.coords))
 
+    print(petal)
     return polylines
 
 def geom_flower(x,y, npetals, petal, petal_angle=None):
@@ -272,12 +238,13 @@ def flower(x,y, npetals, petal):
     return ps
 
 def flower_sheet(npetals, x,y, radius, spacing=10):
-    min_dist = 7
+    min_dist = sqrt(4 * radius**2) / 2
     start = Petal(length = radius / 2., width = 20).randomize()
     end = start
     while (end - start).mag() < min_dist:
         end = Petal(length = (radius - spacing) / 2., width = 20).randomize()
     xv,yv = ((end - start) / max(x,y)).random_split()
+    print(start, end)
 
     ps = []
     for x,y in product(range(10), range(10)):
@@ -295,19 +262,19 @@ def draw(flower, drawing, color='black', line_width=1.):
         petal.stroke(color, width=line_width)
 
 def main():
-    npetals = 200
+    npetals = 8
     x,y = 10, 10
     radius = 60
     spacing = 10
 
-    #flowers = flower_sheet(npetals, x,y, radius, spacing)
+    flowers = flower_sheet(npetals, x,y, radius, spacing)
     #flowers = geom_flower(0,0, npetals, Petal(length = 10* radius / 2., width = 200), petal_angle=137.5)
-    flowers = geom_flower2(0,0, npetals)
+    #flowers = geom_flower_phi(0,0, npetals)
     dwg = svg.Drawing('test.svg')
     draw(flowers, dwg, color='black', line_width=1.)
     #dwg.viewbox(minx=0, miny=0, 
     dwg.viewbox(minx=-300, miny=-300, 
-                width=(radius+spacing)*(x+1), height=(radius+spacing)*(y+1))
+                width=300+(radius+spacing)*(x+1), height=300+(radius+spacing)*(y+1))
     dwg.save()
 
 if __name__ == '__main__':
