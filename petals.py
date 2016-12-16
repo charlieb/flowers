@@ -162,13 +162,17 @@ def geom_flower_interlocking(x,y, npetals, petal, petal_angle=None):
 
     return polylines
 
-def geom_flower_phi(x,y, npetals):
-    petal_scale = 0.99
+def geom_flower_phi(x,y, npetals, petal=None):
+    petal_scale = 0.2**(1./npetals)
     petal_angle = 137.5
-    petal = Petal(width=100, length=200).randomize()
-    petals = [aff.scale(aff.rotate(petal.to_LineString(), 
-                                   petal_angle*i, origin=(0,0)),
-                        petal_scale**i, petal_scale**i, origin=(0,0))
+    if petal is None:
+        petal = Petal(width=100, length=200).randomize()
+    petals = [aff.translate(
+                            aff.scale(
+                                      aff.rotate(petal.to_LineString(), 
+                                                 petal_angle*i, origin=(0,0)),
+                                      petal_scale**i, petal_scale**i, origin=(0,0)), 
+                            x,y)
              for i in range(int(npetals))]
     polys = [geom.Polygon(p) for p in petals]
 
@@ -194,11 +198,10 @@ def geom_flower_phi(x,y, npetals):
         else:
             polylines.append(svg.shapes.Polyline(p.coords))
 
-    print(petal)
     return polylines
 
 def geom_flower(x,y, npetals, petal, petal_angle=None):
-    petal_scale = 0.99
+    petal_scale = 0.1**(1/npetals)
     if petal_angle is None: # if not specified make an even distribution
         petal_angle = 360 / npetals 
     petals = [aff.scale(aff.rotate(petal.to_LineString(), 
@@ -243,12 +246,16 @@ def flower_sheet(npetals, x,y, radius, spacing=10):
     end = start
     while (end - start).mag() < min_dist:
         end = Petal(length = (radius - spacing) / 2., width = 20).randomize()
-    xv,yv = ((end - start) / max(x,y)).random_split()
+
+    rnd = random()
+    xv = (end - start) * rnd / max(x,y)
+    yv = (end - start) * (1-rnd) / max(x,y)
     print(start, end)
 
     ps = []
     for x,y in product(range(10), range(10)):
-        ps += flower((radius+spacing)*(x+1),
+        #ps += flower((radius+spacing)*(x+1),
+        ps += geom_flower_phi((radius+spacing)*(x+1),
                      (radius+spacing)*(y+1),
                      npetals,
                      #Petal(length = (radius - spacing) / 2., width = 20).randomize())
@@ -262,7 +269,7 @@ def draw(flower, drawing, color='black', line_width=1.):
         petal.stroke(color, width=line_width)
 
 def main():
-    npetals = 8
+    npetals = 10
     x,y = 10, 10
     radius = 60
     spacing = 10
