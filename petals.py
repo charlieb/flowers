@@ -29,11 +29,12 @@ class Petal(dict):
         self['width'] = width
     def __repr__(self):
         res = ''
-        keys = list(self.keys())
-        keys.sort()
-        for k in keys:
+        for k in ['lft_bot', 'lft_top', 'rgt_top', 'rgt_bot']:
             res += '%s\t\t%s\n'%(k, self[k])
         return res
+
+    def check(self):
+        return self['lft_bot'] < self['lft_top'] < self['rgt_top'] < self['rgt_bot']
 
     def _limit_(self):
         '''Do not allow taper control points to cross. 
@@ -45,9 +46,9 @@ class Petal(dict):
 
     def randomize(self):
         self['lft_bot'] = - self['width'] + random() * self['width'] * 2
-        self['lft_top'] = self['lft_bot'] + random() * (self['width'] * 2 - self['lft_bot'])
-        self['rgt_top'] = self['lft_top'] + random() * (self['width'] * 2 - self['lft_top'])
-        self['rgt_bot'] = self['rgt_top'] + random() * (self['width'] * 2 - self['rgt_top'])
+        self['rgt_bot'] = self['lft_bot'] + random() * (self['width'] * 1 - self['lft_bot'])
+        self['lft_top'] = - self['width'] + random() * self['width'] * 2
+        self['rgt_top'] = self['lft_top'] + random() * (self['width'] * 1 - self['lft_top'])
         return self
 
     def random_split(self):
@@ -262,6 +263,28 @@ def flower_sheet(npetals, x,y, radius, spacing=10):
                      start + xv*x + yv*y)
     return ps
 
+def flower_sheet2(npetals, x,y, radius, spacing=10):
+    width = radius / 4
+
+    start = Petal(length = radius / 2., width = width).randomize()
+    left = Petal(length = (radius - spacing) / 2., width = width).randomize()
+    right = Petal(length = (radius - spacing) / 2., width = width).randomize()
+
+    xv = left / max(x,y)
+    yv = right / max(x,y)
+
+    print(start, left, right, start + xv*x + yv*y)
+
+    ps = []
+    for x,y in product(range(10), range(10)):
+        ps += geom_flower_phi((radius+spacing)*(x+1),
+                             (radius+spacing)*(y+1),
+                             npetals,
+                             #Petal(length = (radius - spacing) / 2., width = width*2).randomize())
+                             start + xv*x + yv*y)
+
+    return ps
+
 def draw(flower, drawing, color='black', line_width=1.):
     for petal in flower:
         petal.fill('none')
@@ -274,7 +297,7 @@ def main():
     radius = 60
     spacing = 10
 
-    flowers = flower_sheet(npetals, x,y, radius, spacing)
+    flowers = flower_sheet2(npetals, x,y, radius, spacing)
     #flowers = geom_flower(0,0, npetals, Petal(length = 10* radius / 2., width = 200), petal_angle=137.5)
     #flowers = geom_flower_phi(0,0, npetals)
     dwg = svg.Drawing('test.svg')
