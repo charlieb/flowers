@@ -48,7 +48,7 @@ class Petal(dict):
         self['lft_bot'] = - self['width'] + random() * self['width'] * 2
         self['rgt_bot'] = self['lft_bot'] + random() * (self['width'] * 1 - self['lft_bot'])
         self['lft_top'] = - self['width'] + random() * self['width'] * 2
-        self['rgt_top'] = self['lft_top'] + random() * (self['width'] * 1 - self['lft_top'])
+        self['rgt_top'] = self['lft_top'] + random() * (self['width'] * 1 - self['lft_top']) + 0.2
         return self
 
     def random_split(self):
@@ -126,40 +126,49 @@ class Petal(dict):
                                #side2[0:1] +
                                [bz[3] for bz in bez.subdiv([side2], 0.1)])
 
-    def to_split_LineStrings(self):
-        flat = 0.1
-        points = self._points()
-        side1 = points[:4]
-        side2 = points[3:]
-        return (geom.LineString(side1[0:1] + [bz[3] for bz in bez.subdiv([side1], flat)]),
-                geom.LineString(side2[0:1] + [bz[3] for bz in bez.subdiv([side2], flat)]))
-    
-def geom_flower_interlocking(x,y, npetals, petal, petal_angle=None):
-    if petal_angle is None: # if not specified make an even distribution
-        petal_angle = 360 / npetals 
-    petals = [aff.rotate(petal.to_LineString(), petal_angle*i, origin=(0,0)) for i in range(int(npetals))]
+
+def variflower(x,y, npetals, width, height):
+    start = Petal(length = radius / 2., width = width).randomize()
+    left = Petal(length = (radius - spacing) / 2., width = width).randomize()
+    right = Petal(length = (radius - spacing) / 2., width = width).randomize()
+
+    xv = left / max(x,y)
+    yv = right / max(x,y)
+
+    petal_scale = 0.2**(1./npetals)
+    petal_angle = 137.5
+    if petal is None:
+        petal = Petal(width=100, length=200).randomize()
+    petals = [aff.translate(
+                            aff.scale(
+                                      aff.rotate(petal.to_LineString(), 
+                                                 petal_angle*i, origin=(0,0)),
+                                      petal_scale**i, petal_scale**i, origin=(0,0)), 
+                            x,y)
+             for i in range(int(npetals))]
     polys = [geom.Polygon(p) for p in petals]
 
-    (lefts, rights) = zip(*[petal.to_split_LineStrings() for i in range(int(npetals))])
-    lefts = [aff.rotate(left, petal_angle*i, origin=(0,0)) for i, left in enumerate(lefts)]
-    rights = [aff.rotate(right, petal_angle*i, origin=(0,0)) for i, right in enumerate(rights)]
-
     occluded_petals = []
-    for i, p in enumerate(lefts[:-1]):
+    for i, p in enumerate(petals[:-1]):
         for poly in polys[i+1:]:
-            #if not p.intersects(poly): break
-            #if i == 0 and poly == polys[-1]: continue
-            p = p.difference(poly)
-        #occluded_petals.append(lefts[i])
-        occluded_petals.append(rights[i])
+            try:
+                p = p.difference(poly)
+            except:
+                print('Error')
         occluded_petals.append(p)
-    occluded_petals.append(rights[-1])
-    occluded_petals.append(lefts[-1].difference(polys[0]))
+    occluded_petals.append(petals[-1])
 
+    # multilinestring.lines
     polylines = []
     for p in occluded_petals:
-        #print(list(p.coords))
-        polylines.append(svg.shapes.Polyline(p.coords))
+        if type(p) not in (geom.linestring.LineString, geom.multilinestring.MultiLineString):
+            print(type(p))
+            continue
+        if type(p) is geom.multilinestring.MultiLineString:
+            for p2 in p:
+                polylines.append(svg.shapes.Polyline(p2.coords))
+        else:
+            polylines.append(svg.shapes.Polyline(p.coords))
 
     return polylines
 
@@ -201,33 +210,6 @@ def geom_flower_phi(x,y, npetals, petal=None):
 
     return polylines
 
-def geom_flower(x,y, npetals, petal, petal_angle=None):
-    petal_scale = 0.1**(1/npetals)
-    if petal_angle is None: # if not specified make an even distribution
-        petal_angle = 360 / npetals 
-    petals = [aff.scale(aff.rotate(petal.to_LineString(), 
-                                   petal_angle*i, origin=(0,0)),
-                        petal_scale**i, petal_scale**i, origin=(0,0))
-             for i in range(int(npetals))]
-    polys = [geom.Polygon(p) for p in petals]
-
-    occluded_petals = []
-    for i, p in enumerate(petals[:-1]):
-        for poly in polys[i+1:]:
-            p = p.difference(poly)
-        occluded_petals.append(p)
-    occluded_petals.append(petals[-1])
-
-    # multilinestring.lines
-    polylines = []
-    for p in occluded_petals:
-        if type(p) is not geom.linestring.LineString:
-            print(type(p))
-            continue
-        polylines.append(svg.shapes.Polyline(p.coords))
-
-    return polylines
-
 def flower(x,y, npetals, petal):
     petal_angle = 360 / npetals 
     angle = 0
@@ -242,38 +224,21 @@ def flower(x,y, npetals, petal):
     return ps
 
 def flower_sheet(npetals, x,y, radius, spacing=10):
-    min_dist = sqrt(4 * radius**2) / 2
-    start = Petal(length = radius / 2., width = 20).randomize()
-    end = start
-    while (end - start).mag() < min_dist:
-        end = Petal(length = (radius - spacing) / 2., width = 20).randomize()
-
-    rnd = random()
-    xv = (end - start) * rnd / max(x,y)
-    yv = (end - start) * (1-rnd) / max(x,y)
-    print(start, end)
-
-    ps = []
-    for x,y in product(range(10), range(10)):
-        #ps += flower((radius+spacing)*(x+1),
-        ps += geom_flower_phi((radius+spacing)*(x+1),
-                     (radius+spacing)*(y+1),
-                     npetals,
-                     #Petal(length = (radius - spacing) / 2., width = 20).randomize())
-                     start + xv*x + yv*y)
-    return ps
-
-def flower_sheet2(npetals, x,y, radius, spacing=10):
-    width = radius / 4
+    width = radius / 2
+    min_dist = sqrt(4*(width*2)**2) / 2
 
     start = Petal(length = radius / 2., width = width).randomize()
-    left = Petal(length = (radius - spacing) / 2., width = width).randomize()
-    right = Petal(length = (radius - spacing) / 2., width = width).randomize()
+    mid = start
+    while (mid - start).mag() < min_dist:
+        mid = Petal(length = (radius - spacing) / 2., width = width).randomize()
+    end = mid
+    while (end - mid).mag() < min_dist:
+        end = Petal(length = (radius - spacing) / 2., width = width).randomize()
 
-    xv = left / max(x,y)
-    yv = right / max(x,y)
+    xv = (mid - start) / max(x,y)
+    yv = (end - mid) / max(x,y)
 
-    print(start, left, right, start + xv*x + yv*y)
+    print(start, mid, end)
 
     ps = []
     for x,y in product(range(10), range(10)):
@@ -297,8 +262,7 @@ def main():
     radius = 60
     spacing = 10
 
-    flowers = flower_sheet2(npetals, x,y, radius, spacing)
-    #flowers = geom_flower(0,0, npetals, Petal(length = 10* radius / 2., width = 200), petal_angle=137.5)
+    flowers = flower_sheet(npetals, x,y, radius, spacing)
     #flowers = geom_flower_phi(0,0, npetals)
     dwg = svg.Drawing('test.svg')
     draw(flowers, dwg, color='black', line_width=1.)
