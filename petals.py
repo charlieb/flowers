@@ -1,15 +1,18 @@
 from random import choice, random, randrange
+
 import svgwrite as svg
 import time
 import numpy as np
 from itertools import product
 from copy import copy
 from random import random
-from math import acos, sqrt
+from math import acos, sqrt, pi, cos, sin
 import shapely.geometry as geom
 import shapely.affinity as aff
 import bezier as bez
+from copy import deepcopy
 
+from skimage.transform import ProjectiveTransform
 
 
 class Petal(dict):
@@ -24,12 +27,13 @@ class Petal(dict):
     LIMIT = 6.
 
     def __init__(self, length=0, width=0):
-        super().__init__(self.DEFAULT_PARMS)
+        #super().__init__(self.DEFAULT_PARMS)
+        super().__init__()
         self['length'] = length
         self['width'] = width
     def __repr__(self):
         res = ''
-        for k in ['lft_bot', 'lft_top', 'rgt_top', 'rgt_bot']:
+        for k in self:
             res += '%s\t\t%s\n'%(k, self[k])
         return res
 
@@ -46,11 +50,12 @@ class Petal(dict):
 
     def randomize(self):
         self['lft_bot'] = - self['width'] + random() * self['width'] * 2
-        self['rgt_bot'] = self['lft_bot'] + random() * (self['width'] * 1 - self['lft_bot'])
+        self['rgt_bot'] = self['lft_bot'] + random() * (self['width'] * 2 - abs(self['lft_bot']))
         self['lft_top'] = - self['width'] + random() * self['width'] * 2
-        self['rgt_top'] = self['lft_top'] + random() * (self['width'] * 1 - self['lft_top']) + 0.2
+        self['rgt_top'] = self['lft_top'] + random() * (self['width'] * 2 - abs(self['lft_top'])) + 0.2
         return self
 
+            
     def random_split(self):
         p1 = copy(self)
         p2 = copy(self)
@@ -127,7 +132,52 @@ class Petal(dict):
                                [bz[3] for bz in bez.subdiv([side2], 0.1)])
 
 
-def variflower(x,y, npetals, width, height):
+class PetalExtra(Petal):
+    def randomize(self):
+        '''Generates a curve with very few constraints and but only allows it to pass if it doesn't
+        self intersect'''
+        ok = False
+        while not ok:
+            a = random() * 2 * pi
+            d = self['width'] * random()
+            self['lft_bot_x'] = d * cos(a) - self['width'] / 2
+            self['lft_bot_y'] = d * sin(a)
+
+            a = random() * 2 * pi
+            d = self['width'] * random()
+            self['lft_top_x'] = d * cos(a)
+            self['lft_top_y'] = d * sin(a) + self['length']
+
+            a = random() * 2 * pi
+            d = self['width'] * random()
+            self['rgt_bot_x'] = d * cos(a) + self['width'] / 2
+            self['rgt_bot_y'] = d * sin(a)
+
+            a = random() * 2 * pi
+            d = self['width'] * random()
+            self['rgt_top_x'] = d * cos(a)
+            self['rgt_top_y'] = d * sin(a) + self['length']
+
+            ok = geom.Polygon(self.to_LineString()).is_valid
+            print('.', end='')
+        print('')
+        return self
+
+    def _points(self):
+        return [
+                (-self['width']/2., 0), # Curve start point
+                # curve control point - curve starts-off pointing towards this
+                (self['lft_bot_x'], self['lft_bot_y']),
+                # curve control point - curve ends pointing away from this
+                (self['lft_top_x'], self['lft_top_y']),
+                # end point
+                (0, self['length']),
+                (self['rgt_top_x'], self['rgt_top_y']),
+                (self['rgt_bot_x'], self['rgt_bot_y']),
+                (self['width']/2., 0),
+                ]
+        
+def variflower(x,y, npetals, width, length):
     start = Petal(length = radius / 2., width = width).randomize()
     left = Petal(length = (radius - spacing) / 2., width = width).randomize()
     right = Petal(length = (radius - spacing) / 2., width = width).randomize()
@@ -172,11 +222,9 @@ def variflower(x,y, npetals, width, height):
 
     return polylines
 
-def geom_flower_phi(x,y, npetals, petal=None):
+def geom_flower_phi(x,y, npetals, petal):
     petal_scale = 0.2**(1./npetals)
     petal_angle = 137.5
-    if petal is None:
-        petal = Petal(width=100, length=200).randomize()
     petals = [aff.translate(
                             aff.scale(
                                       aff.rotate(petal.to_LineString(), 
@@ -223,17 +271,65 @@ def flower(x,y, npetals, petal):
         ps.append(path)
     return ps
 
+def projective_blend(p1, p2, p3, p4, npetals, x,y, radius, spacing=10):
+    '''Returns uses a projective quadrilateral to square mapping'''
+    lb = np.array([[p1['lft_bot_x'], p1['lft_bot_y']],
+                   [p2['lft_bot_x'], p2['lft_bot_y']],
+                   [p3['lft_bot_x'], p3['lft_bot_y']],
+                   [p4['lft_bot_x'], p4['lft_bot_y']],])
+    rb = np.array([[p1['rgt_bot_x'], p1['rgt_bot_y']],
+                   [p2['rgt_bot_x'], p2['rgt_bot_y']],
+                   [p3['rgt_bot_x'], p3['rgt_bot_y']],
+                   [p4['rgt_bot_x'], p4['rgt_bot_y']],])
+    lt = np.array([[p1['lft_top_x'], p1['lft_top_y']],
+                   [p2['lft_top_x'], p2['lft_top_y']],
+                   [p3['lft_top_x'], p3['lft_top_y']],
+                   [p4['lft_top_x'], p4['lft_top_y']],])
+    rt = np.array([[p1['rgt_top_x'], p1['rgt_top_y']],
+                   [p2['rgt_top_x'], p2['rgt_top_y']],
+                   [p3['rgt_top_x'], p3['rgt_top_y']],
+                   [p4['rgt_top_x'], p4['rgt_top_y']],])
+    sq = np.array([[0, 0], [0, 1], [1, 1], [1, 0]])
+    lbt = ProjectiveTransform()
+    rbt = ProjectiveTransform()
+    ltt = ProjectiveTransform()
+    rtt = ProjectiveTransform()
+    for t, dst in zip([lbt, rbt, ltt, rtt], [lb, rb, lt, rt]):
+        t.estimate(sq, dst)
+
+    petal = deepcopy(p1)
+    ps = []
+    for x,y in product(range(x), range(y)):
+        petal['lft_bot_x'], petal['lft_bot_y'] = lbt([[x,y]]).T
+        petal['lft_top_x'], petal['lft_top_y'] = ltt([x,y]).T
+        petal['rgt_bot_x'], petal['rgt_bot_y'] = rbt([x,y]).T
+        petal['rgt_top_x'], petal['rgt_top_y'] = rtt([x,y]).T
+        ps += geom_flower_phi((radius+spacing)*(x+1),
+                             (radius+spacing)*(y+1),
+                             npetals,
+                             petal)
+
+    return ps
+
+def flower_blend(npetals, x,y, radius, spacing=10):
+    width = radius / 2
+    min_dist = sqrt(4*(width*2)**2) / 2
+    return projective_blend(PetalExtra(length = radius / 2., width = width).randomize(),
+                            PetalExtra(length = radius / 2., width = width).randomize(),
+                            PetalExtra(length = radius / 2., width = width).randomize(),
+                            PetalExtra(length = radius / 2., width = width).randomize(),
+                            npetals, x,y, radius, spacing)
 def flower_sheet(npetals, x,y, radius, spacing=10):
     width = radius / 2
     min_dist = sqrt(4*(width*2)**2) / 2
 
-    start = Petal(length = radius / 2., width = width).randomize()
+    start = PetalExtra(length = radius / 2., width = width).randomize()
     mid = start
     while (mid - start).mag() < min_dist:
-        mid = Petal(length = (radius - spacing) / 2., width = width).randomize()
+        mid = PetalExtra(length = (radius - spacing) / 2., width = width).randomize()
     end = mid
     while (end - mid).mag() < min_dist:
-        end = Petal(length = (radius - spacing) / 2., width = width).randomize()
+        end = PetalExtra(length = (radius - spacing) / 2., width = width).randomize()
 
     xv = (mid - start) / max(x,y)
     yv = (end - mid) / max(x,y)
@@ -241,11 +337,12 @@ def flower_sheet(npetals, x,y, radius, spacing=10):
     print(start, mid, end)
 
     ps = []
-    for x,y in product(range(10), range(10)):
+    for x,y in product(range(x), range(y)):
         ps += geom_flower_phi((radius+spacing)*(x+1),
                              (radius+spacing)*(y+1),
                              npetals,
-                             #Petal(length = (radius - spacing) / 2., width = width*2).randomize())
+                             #PetalExtra(length = (radius - spacing) / 2., width = width).randomize())
+                             #Petal(length = (radius - spacing) / 2., width = width).randomize())
                              start + xv*x + yv*y)
 
     return ps
@@ -258,11 +355,12 @@ def draw(flower, drawing, color='black', line_width=1.):
 
 def main():
     npetals = 10
-    x,y = 10, 10
+    x,y = 5, 5
     radius = 60
     spacing = 10
 
-    flowers = flower_sheet(npetals, x,y, radius, spacing)
+    flowers = flower_blend(npetals, x,y, radius, spacing)
+    #flowers = flower_sheet(npetals, x,y, radius, spacing)
     #flowers = geom_flower_phi(0,0, npetals)
     dwg = svg.Drawing('test.svg')
     draw(flowers, dwg, color='black', line_width=1.)
