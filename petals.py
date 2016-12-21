@@ -12,8 +12,6 @@ import shapely.affinity as aff
 import bezier as bez
 from copy import deepcopy
 
-from skimage.transform import ProjectiveTransform
-
 
 class Petal(dict):
     DEFAULT_PARMS = {
@@ -271,54 +269,6 @@ def flower(x,y, npetals, petal):
         ps.append(path)
     return ps
 
-def projective_blend(p1, p2, p3, p4, npetals, x,y, radius, spacing=10):
-    '''Returns uses a projective quadrilateral to square mapping'''
-    lb = np.array([[p1['lft_bot_x'], p1['lft_bot_y']],
-                   [p2['lft_bot_x'], p2['lft_bot_y']],
-                   [p3['lft_bot_x'], p3['lft_bot_y']],
-                   [p4['lft_bot_x'], p4['lft_bot_y']],])
-    rb = np.array([[p1['rgt_bot_x'], p1['rgt_bot_y']],
-                   [p2['rgt_bot_x'], p2['rgt_bot_y']],
-                   [p3['rgt_bot_x'], p3['rgt_bot_y']],
-                   [p4['rgt_bot_x'], p4['rgt_bot_y']],])
-    lt = np.array([[p1['lft_top_x'], p1['lft_top_y']],
-                   [p2['lft_top_x'], p2['lft_top_y']],
-                   [p3['lft_top_x'], p3['lft_top_y']],
-                   [p4['lft_top_x'], p4['lft_top_y']],])
-    rt = np.array([[p1['rgt_top_x'], p1['rgt_top_y']],
-                   [p2['rgt_top_x'], p2['rgt_top_y']],
-                   [p3['rgt_top_x'], p3['rgt_top_y']],
-                   [p4['rgt_top_x'], p4['rgt_top_y']],])
-    sq = np.array([[0, 0], [0, 1], [1, 1], [1, 0]])
-    lbt = ProjectiveTransform()
-    rbt = ProjectiveTransform()
-    ltt = ProjectiveTransform()
-    rtt = ProjectiveTransform()
-    for t, dst in zip([lbt, rbt, ltt, rtt], [lb, rb, lt, rt]):
-        t.estimate(sq, dst)
-
-    petal = deepcopy(p1)
-    ps = []
-    for x,y in product(range(x), range(y)):
-        petal['lft_bot_x'], petal['lft_bot_y'] = lbt([[x,y]]).T
-        petal['lft_top_x'], petal['lft_top_y'] = ltt([x,y]).T
-        petal['rgt_bot_x'], petal['rgt_bot_y'] = rbt([x,y]).T
-        petal['rgt_top_x'], petal['rgt_top_y'] = rtt([x,y]).T
-        ps += geom_flower_phi((radius+spacing)*(x+1),
-                             (radius+spacing)*(y+1),
-                             npetals,
-                             petal)
-
-    return ps
-
-def flower_blend(npetals, x,y, radius, spacing=10):
-    width = radius / 2
-    min_dist = sqrt(4*(width*2)**2) / 2
-    return projective_blend(PetalExtra(length = radius / 2., width = width).randomize(),
-                            PetalExtra(length = radius / 2., width = width).randomize(),
-                            PetalExtra(length = radius / 2., width = width).randomize(),
-                            PetalExtra(length = radius / 2., width = width).randomize(),
-                            npetals, x,y, radius, spacing)
 def flower_sheet(npetals, x,y, radius, spacing=10):
     width = radius / 2
     min_dist = sqrt(4*(width*2)**2) / 2
@@ -343,7 +293,7 @@ def flower_sheet(npetals, x,y, radius, spacing=10):
                              npetals,
                              #PetalExtra(length = (radius - spacing) / 2., width = width).randomize())
                              #Petal(length = (radius - spacing) / 2., width = width).randomize())
-                             start + xv*x + yv*y)
+                             start + xv*x)# + yv*y)
 
     return ps
 
@@ -359,8 +309,8 @@ def main():
     radius = 60
     spacing = 10
 
-    flowers = flower_blend(npetals, x,y, radius, spacing)
-    #flowers = flower_sheet(npetals, x,y, radius, spacing)
+    #flowers = flower_blend(npetals, x,y, radius, spacing)
+    flowers = flower_sheet(npetals, x,y, radius, spacing)
     #flowers = geom_flower_phi(0,0, npetals)
     dwg = svg.Drawing('test.svg')
     draw(flowers, dwg, color='black', line_width=1.)
