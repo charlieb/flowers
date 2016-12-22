@@ -29,6 +29,9 @@ class Petal(dict):
         super().__init__()
         self['length'] = length
         self['width'] = width
+        self.cache = None
+        self.points = []
+
     def __repr__(self):
         res = ''
         for k in self:
@@ -120,14 +123,20 @@ class Petal(dict):
                 'C', points[4], points[5], points[6],
                ]
 
-    def to_LineString(self):
+    def to_LineString(self, use_cache=True):
         flat = 0.1
         points = self._points()
-        side1 = points[:4]
-        side2 = points[3:]
-        return geom.LineString(side1[0:1] + [bz[3] for bz in bez.subdiv([side1], flat)] +
-                               #side2[0:1] +
-                               [bz[3] for bz in bez.subdiv([side2], 0.1)])
+
+        # if we're not using the cache or it hasn't been created yet or it's
+        # out of date: regenerate it
+        if not use_cache or self.cache is None or points != self.points:
+            self.points = points
+            side1 = points[:4]
+            side2 = points[3:]
+            self.cache = geom.LineString(side1[0:1] + [bz[3] for bz in bez.subdiv([side1], flat)] +
+                                   #side2[0:1] +
+                                   [bz[3] for bz in bez.subdiv([side2], 0.1)])
+        return self.cache
 
 
 class PetalExtra(Petal):
@@ -174,6 +183,51 @@ class PetalExtra(Petal):
                 (self['rgt_bot_x'], self['rgt_bot_y']),
                 (self['width']/2., 0),
                 ]
+
+    def dist(self, p):
+        return (p - self).mag()
+
+    def too_big(self):
+        return \
+        self['lft_bot_x'] + self['width'] / 2 > self['width'] or \
+        self['lft_bot_y'] > self['width'] or \
+        self['lft_top_x'] > self['width'] or \
+        self['lft_top_y'] - self['length'] > self['width'] or \
+        self['rgt_bot_x'] - self['width'] / 2 > self['width'] or \
+        self['rgt_bot_y'] > self['width'] or \
+        self['rgt_top_x'] > self['width'] or \
+        self['rgt_top_y'] - self['length'] > self['width'] 
+
+    def find_nearby(self, min_dist=5, max_dist=10):
+        new = deepcopy(self)
+
+        ok = False
+        while not ok or not min_dist < self.dist(new) < max_dist or new.too_big():
+            a = random() * 2 * pi
+            d = max_dist * random()
+            new['lft_bot_x'] = self['lft_bot_x'] + d * cos(a)
+            new['lft_bot_y'] = self['lft_bot_y'] + d * sin(a)
+
+            a = random() * 2 * pi
+            d = max_dist * random()
+            new['lft_top_x'] = self['lft_top_x'] + d * cos(a)
+            new['lft_top_y'] = self['lft_top_y'] + d * sin(a)
+
+            a = random() * 2 * pi
+            d = max_dist * random()
+            new['rgt_bot_x'] = self['rgt_bot_x'] + d * cos(a)
+            new['rgt_bot_y'] = self['rgt_bot_y'] + d * sin(a)
+
+            a = random() * 2 * pi
+            d = max_dist * random()
+            new['rgt_top_x'] = self['rgt_top_x'] + d * cos(a)
+            new['rgt_top_y'] = self['rgt_top_y'] + d * sin(a)
+
+            ok = geom.Polygon(new.to_LineString()).is_valid
+            print('.', end='')
+        print('')
+        return new
+
         
 def variflower(x,y, npetals, width, length):
     start = Petal(length = radius / 2., width = width).randomize()
@@ -271,30 +325,19 @@ def flower(x,y, npetals, petal):
 
 def flower_sheet(npetals, x,y, radius, spacing=10):
     width = radius / 2
-    min_dist = sqrt(4*(width*2)**2) / 2
 
-    start = PetalExtra(length = radius / 2., width = width).randomize()
-    mid = start
-    while (mid - start).mag() < min_dist:
-        mid = PetalExtra(length = (radius - spacing) / 2., width = width).randomize()
-    end = mid
-    while (end - mid).mag() < min_dist:
-        end = PetalExtra(length = (radius - spacing) / 2., width = width).randomize()
-
-    xv = (mid - start) / max(x,y)
-    yv = (end - mid) / max(x,y)
-
-    print(start, mid, end)
+    petal = PetalExtra(length = radius / 2., width = width).randomize()
 
     ps = []
     for x,y in product(range(x), range(y)):
+        petal = petal.find_nearby(min_dist=4, max_dist=7)
         ps += geom_flower_phi((radius+spacing)*(x+1),
                              (radius+spacing)*(y+1),
                              npetals,
                              #PetalExtra(length = (radius - spacing) / 2., width = width).randomize())
                              #Petal(length = (radius - spacing) / 2., width = width).randomize())
-                             start + xv*x)# + yv*y)
-
+                             #start + xv*x + yv*y)
+                             petal)
     return ps
 
 def draw(flower, drawing, color='black', line_width=1.):
@@ -304,8 +347,8 @@ def draw(flower, drawing, color='black', line_width=1.):
         petal.stroke(color, width=line_width)
 
 def main():
-    npetals = 10
-    x,y = 5, 5
+    npetals = 20
+    x,y = 10, 10
     radius = 60
     spacing = 10
 
