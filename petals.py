@@ -1,4 +1,5 @@
 from random import choice, random, randrange
+from functools import reduce
 
 import svgwrite as svg
 import time
@@ -136,6 +137,12 @@ class Petal(dict):
             self.cache = geom.LineString(side1[0:1] + [bz[3] for bz in bez.subdiv([side1], flat)] +
                                    #side2[0:1] +
                                    [bz[3] for bz in bez.subdiv([side2], 0.1)])
+
+            p1 = self.cache.coords[0]
+#            for p2 in self.cache.coords[1:]:
+#                print('d: ' + str(sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)))
+#                p1 = p2
+
         return self.cache
 
 
@@ -228,26 +235,7 @@ class PetalExtra(Petal):
         print('')
         return new
 
-        
-def variflower(x,y, npetals, width, length):
-    start = Petal(length = radius / 2., width = width).randomize()
-    left = Petal(length = (radius - spacing) / 2., width = width).randomize()
-    right = Petal(length = (radius - spacing) / 2., width = width).randomize()
-
-    xv = left / max(x,y)
-    yv = right / max(x,y)
-
-    petal_scale = 0.2**(1./npetals)
-    petal_angle = 137.5
-    if petal is None:
-        petal = Petal(width=100, length=200).randomize()
-    petals = [aff.translate(
-                            aff.scale(
-                                      aff.rotate(petal.to_LineString(), 
-                                                 petal_angle*i, origin=(0,0)),
-                                      petal_scale**i, petal_scale**i, origin=(0,0)), 
-                            x,y)
-             for i in range(int(npetals))]
+def occlude_petals(petals):
     polys = [geom.Polygon(p) for p in petals]
 
     occluded_petals = []
@@ -260,7 +248,6 @@ def variflower(x,y, npetals, width, length):
         occluded_petals.append(p)
     occluded_petals.append(petals[-1])
 
-    # multilinestring.lines
     polylines = []
     for p in occluded_petals:
         if type(p) not in (geom.linestring.LineString, geom.multilinestring.MultiLineString):
@@ -268,11 +255,28 @@ def variflower(x,y, npetals, width, length):
             continue
         if type(p) is geom.multilinestring.MultiLineString:
             for p2 in p:
-                polylines.append(svg.shapes.Polyline(p2.coords))
+                polylines.append(p2.coords)
         else:
-            polylines.append(svg.shapes.Polyline(p.coords))
+            polylines.append(p.coords)
+
+    polylines = [svg.shapes.Polyline(pts) for pts in polylines]
 
     return polylines
+
+def variflower(x,y, npetals, petal):
+    petal_scale = 0.2**(1./npetals)
+    petal_angle = 137.5
+    petals = [petal]
+    for i in range(int(npetals)):
+        petals.append(petals[-1].find_nearby(min_dist=5, max_dist=10))
+    petals = [aff.translate(
+                            aff.scale(
+                                      aff.rotate(p.to_LineString(), 
+                                                 petal_angle*i, origin=(0,0)),
+                                      petal_scale**i, petal_scale**i, origin=(0,0)), 
+                            x,y)
+             for i, p in enumerate(petals)]
+    return occlude_petals(petals)
 
 def geom_flower_phi(x,y, npetals, petal):
     petal_scale = 0.2**(1./npetals)
@@ -284,31 +288,7 @@ def geom_flower_phi(x,y, npetals, petal):
                                       petal_scale**i, petal_scale**i, origin=(0,0)), 
                             x,y)
              for i in range(int(npetals))]
-    polys = [geom.Polygon(p) for p in petals]
-
-    occluded_petals = []
-    for i, p in enumerate(petals[:-1]):
-        for poly in polys[i+1:]:
-            try:
-                p = p.difference(poly)
-            except:
-                print('Error')
-        occluded_petals.append(p)
-    occluded_petals.append(petals[-1])
-
-    # multilinestring.lines
-    polylines = []
-    for p in occluded_petals:
-        if type(p) not in (geom.linestring.LineString, geom.multilinestring.MultiLineString):
-            print(type(p))
-            continue
-        if type(p) is geom.multilinestring.MultiLineString:
-            for p2 in p:
-                polylines.append(svg.shapes.Polyline(p2.coords))
-        else:
-            polylines.append(svg.shapes.Polyline(p.coords))
-
-    return polylines
+    return occlude_petals(petals)
 
 def flower(x,y, npetals, petal):
     petal_angle = 360 / npetals 
@@ -327,17 +307,19 @@ def flower_sheet(npetals, x,y, radius, spacing=10):
     width = radius / 2
 
     petal = PetalExtra(length = radius / 2., width = width).randomize()
+    #flower_fn = geom_flower_phi
+    flower_fn = variflower
 
     ps = []
     for x,y in product(range(x), range(y)):
         petal = petal.find_nearby(min_dist=4, max_dist=7)
-        ps += geom_flower_phi((radius+spacing)*(x+1),
-                             (radius+spacing)*(y+1),
-                             npetals,
-                             #PetalExtra(length = (radius - spacing) / 2., width = width).randomize())
-                             #Petal(length = (radius - spacing) / 2., width = width).randomize())
-                             #start + xv*x + yv*y)
-                             petal)
+        ps += flower_fn((radius+spacing)*(x+1),
+                         (radius+spacing)*(y+1),
+                         npetals,
+                         #PetalExtra(length = (radius - spacing) / 2., width = width).randomize())
+                         #Petal(length = (radius - spacing) / 2., width = width).randomize())
+                         #start + xv*x + yv*y)
+                         petal)
     return ps
 
 def draw(flower, drawing, color='black', line_width=1.):
@@ -346,14 +328,41 @@ def draw(flower, drawing, color='black', line_width=1.):
         drawing.add(petal)
         petal.stroke(color, width=line_width)
 
+def draw_cnc(flowers, scale=1.):
+    header = ['%',
+            'G21 (All units in mm)',
+            'G90 (All absolute moves)',
+            ]
+    footer = ['G00 X0.0 Y 0.0 Z0.0',
+            'M2',
+            '%',
+            ]
+
+    body = []
+    for path in flowers:
+        body.append('G01 Z15 F10000')
+        first = True
+        for pt in path.points:
+            xy = ' X ' + format((pt[0]) * scale, '.4f') + \
+                 ' Y ' + format((pt[1]) * scale, '.4f')
+            if first:
+                body.append('G01' + xy + ' F10000') # should be G00 but firware ignores F
+                body.append('G01 Z34 F10000')
+                first = False
+            else:
+                body.append('G01' + xy + ' F10000')
+
+    return '\n'.join(header + body + footer)
+
+
 def main():
-    npetals = 20
+    npetals = 10
     x,y = 10, 10
     radius = 60
     spacing = 10
 
-    #flowers = flower_blend(npetals, x,y, radius, spacing)
     flowers = flower_sheet(npetals, x,y, radius, spacing)
+    #flowers = variflower(0,0, npetals, PetalExtra(length = 200, width = 50).randomize())
     #flowers = geom_flower_phi(0,0, npetals)
     dwg = svg.Drawing('test.svg')
     draw(flowers, dwg, color='black', line_width=1.)
@@ -361,6 +370,9 @@ def main():
     dwg.viewbox(minx=-300, miny=-300, 
                 width=300+(radius+spacing)*(x+1), height=300+(radius+spacing)*(y+1))
     dwg.save()
+
+    with open('test.cnc', 'w') as cnc:
+        cnc.write(draw_cnc(flowers))
 
 if __name__ == '__main__':
     t0 = time.time()
